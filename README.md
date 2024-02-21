@@ -20,7 +20,7 @@ A sample image showing left-over polygon for a pocketing operation with a sharp 
 
 
 ### Documentation
-A brief description for the geometry used in deriving the polygons is provided here [Documentation](/Docs/path_second_pass.pdf "Geometry description).
+A brief description for the geometry used in deriving the polygons is provided here ![Documentation](/Docs/path_second_pass.pdf "Geometry description).
 
   ### Note:
   The macro does not currently have extensive tests for edge cases. It was developed largely for personal use and made available publicly in case some one else might find it useful.
