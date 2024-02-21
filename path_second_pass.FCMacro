@@ -1,0 +1,300 @@
+# **************************************************************************
+# *                                                                        *
+# *   Copyright (c) 2024 Munther Hindi
+# *                                                                        *
+# *   This program is free software; you can redistribute it and/or modify *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)   *
+# *   as published by the Free Software Foundation; either version 2 of    *
+# *   the License, or (at your option) any later version.                  *
+# *   for detail see the LICENCE text file.                                *
+# *                                                                        *
+# *   This program is distributed in the hope that it will be useful,      *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of       *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the        *
+# *   GNU Library General Public License for more details.                 *
+# *                                                                        *
+# *                                                                        *
+# *                                                                        *
+# ***************************************************************************
+__title__ = "Path second pass polygons"
+__author__ = "Munther Hindi <muntherhindi@gmail.com>"
+__url__ = ["https://github.com/mhindi2/Path-Second-Pass"]
+
+import math
+from FreeCAD import Vector
+from geom2D import Point2D, Vector2D, Line2D
+import Part
+
+class switch(object):
+    value = None
+
+    def __new__(class_, value):
+        class_.value = value
+        return True
+
+def case(*args):
+    return any((arg == switch.value for arg in args))
+
+
+def getPoints(edgeList, deflection=0.2):
+    verts = []
+    for i, e in enumerate(edgeList):
+        while switch(e.Curve.TypeId):
+            if case("Part::GeomLineSegment"):
+                verts.append(e.Vertexes[0].Point)
+                break
+            
+            if case("Part::GeomLine"):
+                verts.append(e.Vertexes[0].Point)
+                break
+            
+            else:
+                vertsDisc = e.discretize(Deflection=deflection)
+                verts += vertsDisc[:-1]
+                break
+
+    return verts
+
+
+def tangentParameters(l1, l2):
+    global toolRadius
+    # given two intersectiong 2D lines l1 and l2
+    # return the line parameters t1 and t2 that a circle of
+    # radius r is tangent to the two lines
+    # recall that the parameteric equation of a line
+    # with ends p0 and p1 (2D Vectors)
+    # is r = p0 + t*(p1-p0); )<= t <= 1; given points on the line
+    # between p0 and p1, while t < 0 or t > 0 gives points either before
+    # p0 or after p1
+    p = l1.intersectionPoint(l2)
+
+    print(f"l1={l1} l2={l2}")
+    u1 = l1.direction()
+    u2 = l2.direction()
+    print(f"u1={u1}")
+    print(f"u2={u2}")
+    u = (u1+u2).normalize()  # unit vector along bisector of angle
+    print(f"u={u}")
+    alpha = math.acos(u.dot(u1))
+    # have yet to deal with lines that almost parallel
+    d = toolRadius/math.sin(alpha)  # distance from vertex to center of
+    centerVector = p.vector() + d*u
+    # tangent parameter for line1
+    Vc = centerVector - l1.p0.vector()
+    ell = Vc.dot(u1)
+    t1 = ell / l1.length()
+
+    # tangent parameter for line2
+    Vc = centerVector - l2.p0.vector()
+    ell = Vc.dot(u2)
+    t2 = ell / l2.length()
+
+    return (t1, t2)
+
+
+def tangentPoints(inList, iBefore, iAfter):
+    # return list of tangency 2D points for edges starting at
+    # indexes in the inList at iBefore, iAfter
+    """                 *
+       iB         *
+       *
+    *
+       *
+       iA         *
+                         *
+    """
+    print(f"point[iBefore={iBefore}]={inList[iBefore]}")
+    print(f"point[iAfter={iAfter}]={inList[iAfter]}")
+    n = iBefore
+    p0 = Point2D(inList[n].x, inList[n].y)
+    n1 = n - 1
+    if n1 < 0:
+        n1 = len(inList) - 1
+    p1 = Point2D(inList[n1].x, inList[n1].y)
+    line1 = Line2D(p0, p1)
+
+    n = iAfter
+    p0 = Point2D(inList[n].x, inList[n].y)
+    n1 = n + 1
+    if n1 >= len(inList):
+        n1 = 0
+    p1 = Point2D(inList[n1].x, inList[n1].y)
+    line2 = Line2D(p0, p1)
+
+    t1, t2 = tangentParameters(line1, line2)
+    print(f"t1={t1} t2={t2}")
+
+    done = True
+    tPoints = []
+    if 0 <= t1 <= 1:
+        pBefore = line1.point(t1)
+    elif t1 > 1:
+        done = False
+        pBefore = line1.p1
+        iBefore -= 1
+        if iBefore < 0:
+            iBefore = len(inList) - 1
+    else:
+        pBefore = None
+    tPoints.append(('Before', pBefore))
+
+    if 0 <= t2 <= 1:
+        pAfter = line2.point(t2)
+    elif t2 > 1:
+        done = False
+        pAfter = line2.p1
+        iAfter += 1
+        if iAfter >= len(inList):
+            iAfter = 0
+    else:
+        pAfter = None
+
+    tPoints.append(('After', pAfter))
+
+    if done:
+        return tPoints
+    else:
+        return tPoints + tangentPoints(inList, iBefore, iAfter)
+
+
+def remaining_faces(operation, minOffset=0.2):
+    global toolRadius
+    toolRadius = operation.OpToolDiameter.Value/2
+    if operation.Name.find('Profile') != -1:
+        toolOffset = operation.OffsetExtra.Value
+    elif operation.Name.find('Pocket') != -1:
+        toolOffset = operation.ExtraOffset.Value
+    else:
+        toolOffset = 0
+    
+    toolRadius += toolOffset
+    baseGeometry = operation.Base
+    triangleFaces = []
+
+    # part of code here is lifted from
+    # freecad-source/src/Mod/Path/Op/Profile.py
+    for base, subList in baseGeometry:
+        edgelist = []
+        for sub in subList:
+            shape = getattr(base.Shape, sub)
+            if isinstance(shape, Part.Edge):
+                edgelist.append(getattr(base.Shape, sub))
+            elif isinstance(shape, Part.Face):
+                edgelist = edgelist + shape.Edges
+
+        # now we will assume all edges in the model are used in profiling
+        print("Sorting edges...")
+        sortedEdges = Part.sortEdges(edgelist)[0]
+        print(f"num edges = {len(sortedEdges)}")
+        print("Constructing face")
+        pts = getPoints(sortedEdges, deflection=minOffset)
+        pts.append(pts[0])
+        # pts.append(pts[1])
+        print(f"number of points = {len(pts)}")
+        print(pts)
+        poly = Part.makePolygon(pts)
+        modelFace = Part.Face(Part.Wire(poly))
+        for i in range(len(pts)):
+            p = pts[i]
+            # Vectors from current vertex to vertices on either side
+            i1 = i - 1  # index of point before
+            if i1 < 0:
+                # since pts[N-1] = pts[0], we need to go to the point
+                # BEFORE that to make an edge
+                i1 = len(pts) - 2
+            i2 = i + 1  # index of point after
+            if i2 > len(pts) - 1:
+                i2 = 1  # same reasoning as above
+            e1 = (pts[i1] - p)
+            if e1.Length == 0:
+                continue
+            u1 = Vector(e1).normalize()  # unit vector for edge1; need to maintain e1, so make copy of it first
+            e2 = (pts[i2] - p)
+            if e2.Length == 0:
+                continue
+            print(f"i={i} pts[{i1}]={pts[i1]} pts[{i}]={pts[i]} pts[{i2}]={pts[i2]}") 
+            u2 = Vector(e2).normalize()  # unit vector for edge1
+            u = (u1+u2).normalize()  # unit vector along bisector of angle
+            dotProduct = u.dot(u1)
+            if dotProduct > 1:
+                alpha = 0
+            elif dotProduct < -1:
+                alpha = math.pi
+            else:
+                alpha = math.acos(dotProduct)
+            # have yet to deal with lines that almost parallel
+            # distance from vertex to center of arc
+            if alpha == 0:
+                continue
+            d = toolRadius/math.sin(alpha)
+            print(f"d[{i}] = {d}")
+            if abs(d) < toolRadius + minOffset:
+                continue
+            c = p + d*u  # center of tool distance from current vertex
+            print(f"c[{i}]={c}")
+            # in some instances, like very close edges, the center
+            # might lie outside the modelFace, although on the inside side
+            # of the face, so use a small distance for the test:
+            c = p + toolRadius*u
+            print(f"c[{i}] for d = {toolRadius} ={c}")            
+            isCenterInside = modelFace.isInside(c, 0.001, True)
+            print(f"center[{i}] {isCenterInside}")
+            if operation.Name.find('Pocket') != -1:
+                side = 'Inside'
+            else:
+                side = operation.Side
+            if ((side == 'Inside' and isCenterInside)
+                or (side == 'Outside' and not isCenterInside)):
+                
+                if d < e1.Length and d < e2.Length:
+                    v1 = p + d*math.cos(alpha)*u1  # tangent point to edge1
+                    v2 = p + d*math.cos(alpha)*u2  # tangent point to edge2
+                    facePoints = [v1, p, v2, v1]
+                    print("I am here")
+                else:
+                    print("No, I am here")
+                    print(f"e1.Length = {e1.Length}, e2.Length = {e2.Length}")
+                    v1 = pts[i1]
+                    v2 = pts[i2]
+                    facePoints = []
+                    points2DList = tangentPoints(pts, i1, i2)
+                    print(f"len(points2DList) = {len(points2DList)}")
+                    z = pts[0].z
+                    for pj in reversed(points2DList):
+                        print(f"{pj[0]} {pj[1]}")
+                        if pj[0] == 'Before' and pj[1] is not None:
+                            facePoints.append(Vector(pj[1].x,
+                                                     pj[1].y, z))
+                    facePoints += [v1, p, v2]
+                    for pj in points2DList:
+                        print(f"{pj[0]} {pj[1]}")
+                        if pj[0] == 'After' and pj[1] is not None:
+                            facePoints.append(Vector(pj[1].x,
+                                                     pj[1].y, z))
+                    facePoints.append(facePoints[0])
+                    print(facePoints)
+
+                wire = Part.makePolygon(facePoints)
+                face = Part.Face(wire)
+                triangleFaces.append(face)
+
+    # add faces to document
+    if len(triangleFaces) > 0:
+        doc = App.ActiveDocument
+        group = doc.addObject("App::DocumentObjectGroup",operation.Label+"_remaining_faces")
+        for face in triangleFaces:
+            part = doc.addObject("Part::Feature", 'triangle')
+            part.Shape = face
+            group.addObject(part)
+            # Part.show(face)
+
+if __name__ == '__main__':
+    for sel in FreeCADGui.Selection.getSelection():
+        if sel.TypeId == 'Path::FeaturePython':
+            if sel.Name.find('Profile') != -1 or sel.Name.find('Pocket') != -1:
+                remaining_faces(sel)
+            else:
+                FreeCAD.Console.PrintMessage(f"{sel.Name} operation not supported")
+        else:
+            FreeCAD.Console.PrintMessage(f"Selection {sel.Label} not a path operation")
+                
