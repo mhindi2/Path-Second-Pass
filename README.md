@@ -10,9 +10,20 @@ FreeCAD Macro that collects polygons reamaining after a Path profile or pocket o
  Copy the files path_second_path.FCMacro and geom2D.py to your local FreeCAD Macro directory. This directory can be set or changed under Macro menu. Select the operations you want to produce the polygons for (currently only Profile and Pocket operations are supported) and execute the macro path_second_path.FCMacro The uncut faces should be added to new groups in the document. Process any of these with new Path jobs as you see fit.
 
  ### Examples
+ The following image shows the polygons found for outside an inside profile operations. The green line shows the tool path.
+ 
+![Sample operation](/Images/remaining_triangles-1.png)
+
+A sample image showing left-over polygon for a pocketing operation with a sharp corner.
+
+![Sample operation](/Images/remaining_triangles-2.png)
+
+
+### Documentation
+A brief description for the geometry used in deriving the polygons is provided here [Documentation](/Docs/path_second_pass.pdf "Geometry description).
 
   ### Note:
-  The macro does not currently have extensive tests for edge cases. It was developed largely for personal use and made available puiblocly in case some one else might find it useful.
+  The macro does not currently have extensive tests for edge cases. It was developed largely for personal use and made available publicly in case some one else might find it useful.
   If you do find bugs and have requests for imporovements, please let me know, and I'll see if I can help.
   
 ## Author
