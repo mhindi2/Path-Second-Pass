@@ -214,7 +214,11 @@ def remaining_faces(operation, minOffset=0.2):
                 continue
             print(f"i={i} pts[{i1}]={pts[i1]} pts[{i}]={pts[i]} pts[{i2}]={pts[i2]}") 
             u2 = Vector(e2).normalize()  # unit vector for edge1
-            u = (u1+u2).normalize()  # unit vector along bisector of angle
+            u = (u1+u2)
+            if u.Length != 0:
+                u = u.normalize()  # unit vector along bisector of angle
+            else:
+                continue
             dotProduct = u.dot(u1)
             if dotProduct > 1:
                 alpha = 0
