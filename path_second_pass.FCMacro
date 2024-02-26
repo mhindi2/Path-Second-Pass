@@ -22,7 +22,7 @@ __url__ = ["https://github.com/mhindi2/Path-Second-Pass"]
 
 import math
 from FreeCAD import Vector
-from geom2D import Point2D, Vector2D, Line2D
+from geom2D import Point2D, Vector2D, Line2D, tolerance
 import Part
 
 class switch(object):
@@ -112,6 +112,8 @@ def tangentPoints(inList, iBefore, iAfter):
         n1 = len(inList) - 1
     p1 = Point2D(inList[n1].x, inList[n1].y)
     line1 = Line2D(p0, p1)
+    if line1.length() < tolerance:
+        return []
 
     n = iAfter
     p0 = Point2D(inList[n].x, inList[n].y)
@@ -120,6 +122,8 @@ def tangentPoints(inList, iBefore, iAfter):
         n1 = 0
     p1 = Point2D(inList[n1].x, inList[n1].y)
     line2 = Line2D(p0, p1)
+    if line2.length() < tolerance:
+        return []
 
     t1, t2 = tangentParameters(line1, line2)
     print(f"t1={t1} t2={t2}")
